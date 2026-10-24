@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1a0b2e" />
+<title>神秘塔罗 · 占卜与图鉴 | Mystic Tarot</title>
+<meta name="description" content="暗黑哥特风格的塔罗占卜与图鉴：洗牌、扇形抽卡、3D 翻牌，78 张完整牌意，可选接入大模型深度解读。" />
+<link rel="stylesheet" href="./css/style.css" />
+</head>
+<body>
+
+<div id="app" v-cloak>
+
+  <!-- ============ 场景背景：整个占卜界面以图2 为背景 ============ -->
+  <div class="scene" :class="{ 'is-blurred': tab === 'learn' }" aria-hidden="true">
+    <div class="scene-img"></div>
+    <div class="scene-veil"></div>
+    <div class="scene-stars"></div>
+  </div>
+
+  <!-- ================= 顶部导航 ================= -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">✦</span>
+      <span class="brand-text">
+        <b>神秘塔罗</b><i>MYSTIC TAROT</i>
+      </span>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab" :class="{ active: tab === 'divine' }" @click="switchTab('divine')">占卜</button>
+      <button class="tab" :class="{ active: tab === 'learn' }" @click="switchTab('learn')">图鉴</button>
+    </nav>
+
+    <button class="ai-btn" type="button" :class="{ on: aiReady }" @click="aiOpen = true"
+            :title="aiReady ? 'AI 深度解读已开启' : '配置 AI 深度解读'">
+      <span class="ai-dot"></span>AI
+    </button>
+  </header>
+
+  <main class="shell">
+
+    <!-- ================= 板块一：占卜 ================= -->
+    <section class="view" v-show="tab === 'divine'">
+
+      <div class="hero">
+        <p class="hero-kicker">✦ MYSTIC TAROT ✦</p>
+        <h1 class="hero-title">星辰在你指尖低语</h1>
+        <p class="hero-sub">静心凝神，写下你的疑问，让牌为你揭示那些未曾察觉的答案。</p>
+      </div>
+
+      <!-- 提问面板 -->
+      <div class="panel ask-panel">
+        <div class="field">
+          <label class="field-label" for="q">你的疑问</label>
+          <div class="input-wrap">
+            <input id="q" class="oracle-input" type="text" maxlength="160" autocomplete="off"
+                   :disabled="busy" v-model="question"
+                   placeholder="请输入您想占卜的问题…（填写后可获得 AI 深度解读）"
+                   @keyup.enter="startDivination" />
+            <span class="input-badge" v-if="aiReady">AI</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label">选择牌阵</label>
+          <div class="spread-picker">
+            <button v-for="s in spreadList" :key="s.key" type="button"
+                    class="spread-btn" :class="{ active: spreadKey === s.key }"
+                    :disabled="busy" @click="spreadKey = s.key">
+              <span class="spread-emoji">{{ s.emoji }}</span>
+              <span class="spread-body">
+                <span class="spread-name">{{ s.name }}</span>
+                <span class="spread-sub">{{ s.sub }}</span>
+              </span>
+              <span class="spread-count">{{ s.count }} 张</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="ask-actions">
+          <button class="btn-gold" type="button" :disabled="busy" @click="startDivination">
+            <span class="btn-glow"></span>{{ primaryBtnText }}
+          </button>
+          <button class="btn-ghost" type="button" v-if="phase === 'draw' && remainingDraw > 0"
+                  @click="autoDraw">自动抽卡</button>
+          <button class="btn-ghost" type="button" v-if="phase === 'reveal' || phase === 'done'"
+                  @click="resetDivination">重新占卜</button>
+          <button class="btn-ghost" type="button" @click="spreadRefOpen = true">牌阵图</button>
+        </div>
+
+        <p class="ritual-tip" v-if="phase === 'shuffling'">正在洗牌，请将注意力放在你的问题上……</p>
+        <p class="ritual-tip" v-else-if="phase === 'draw'">
+          牌已铺开 —— <b>左右滑动牌扇，点击你直觉选中的牌</b>，将它放到牌阵上（还需 {{ remainingDraw }} 张）
+        </p>
+        <p class="ritual-tip" v-else-if="phase === 'reveal'">请点击牌阵上背面朝上的牌，翻开它，牌意将逐张显现。</p>
+      </div>
+
+      <!-- 占卜台 -->
+      <div class="table" :class="'phase-' + phase" ref="table">
+        <div class="table-glow" aria-hidden="true"></div>
+        <div class="table-head">
+          <span class="table-title">
+            {{ currentSpread.name }}<i v-if="currentSpread.sub"> · {{ currentSpread.sub }}</i>
+          </span>
+          <span class="table-meta">
+            <template v-if="phase === 'draw'">已抽 {{ drawn.length }} / {{ currentSpread.cards.length }}</template>
+            <template v-else-if="phase === 'reveal' || phase === 'done'">已翻 {{ flippedCount }} / {{ drawn.length }}</template>
+          </span>
+        </div>
+
+        <div class="table-body">
+          <div class="spread-stage" ref="stage"
+               :class="{ 'stage-lg': spreadKey === 'celtic' }"
+               :style="{ aspectRatio: stageAspect }">
+            <!-- 牌位空槽 -->
+            <div v-for="(c, i) in currentSpread.cards" :key="'ghost-' + i"
+                 class="slot-ghost" :class="{ filled: slotFilled(i) }" :style="slotStyle(c)">
+              <span class="ghost-num">{{ i + 1 }}</span>
+            </div>
+
+            <!-- 78 张牌 -->
+            <div v-for="(d, i) in visualDeck" :key="'card-' + d.uid"
+                 class="card-el" :data-uid="d.uid"
+                 :class="{
+                   'in-fan': d.slot < 0 && phase !== 'idle' && phase !== 'shuffling',
+                   'fan-hot': fanHover === d.uid,
+                   'fan-dim': fanHover !== null && fanHover !== d.uid && d.slot < 0,
+                   dealt: d.slot >= 0, clickable: canFlip(d), flipped: d.flipped, reversed: d.reversed
+                 }"
+                 @click="onCardClick(d, $event)"
+                 @pointerdown="onPointerDown(d, $event)"
+                 @pointerenter="onFanEnter(d, $event)"
+                 @pointerleave="onFanLeave(d, $event)">
+              <div class="card-inner">
+                <div class="card-back"></div>
+                <div class="card-face">
+                  <img class="card-art" v-if="hasArt && (d.slot >= 0 || d.flipped) && !broken[d.cardId]"
+                       :src="imgOf(d)" :alt="cardOf(d).name" draggable="false" @error="markBroken(d.cardId)" />
+                  <div class="face-frame" v-if="!hasArt || broken[d.cardId]">
+                    <span class="face-emoji">{{ cardOf(d).emoji }}</span>
+                    <span class="face-name">{{ cardOf(d).name }}</span>
+                  </div>
+                </div>
+              </div>
+              <span class="card-badge" v-if="d.flipped">{{ d.reversed ? '逆' : '正' }}</span>
+            </div>
+
+            <div class="shuffle-ring" v-if="phase === 'shuffling'" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+
+          <!-- 扇形牌堆占位（高度由 JS 计算） -->
+          <div class="fan-space" :style="{ height: fanSpace + 'px' }"
+               v-if="phase === 'shuffling' || phase === 'draw'"></div>
+        </div>
+
+        <div class="fan-hint" v-if="phase === 'draw'">
+          <span class="fan-hint-arrow">⟵</span> 左右滑动翻阅牌扇 · 点击你直觉选中的牌 <span class="fan-hint-arrow">⟶</span>
+        </div>
+        <p class="table-hint" v-else-if="phase === 'idle'">✦ 桌上已备好 78 张牌，等待你的召唤 ✦</p>
+      </div>
+
+      <!-- 解析区 -->
+      <div class="reading" v-if="analysis">
+        <h2 class="reading-title"><span>✦</span> 牌 意 解 读 <span>✦</span></h2>
+        <p class="reading-q" v-if="question.trim()">你所问：「{{ question.trim() }}」</p>
+
+        <ol class="reading-list">
+          <li v-for="(line, i) in analysis.lines" :key="'line-' + i"
+              class="reading-item" :class="{ locked: !line.flipped }">
+            <div class="ri-head">
+              <span class="ri-no">{{ line.no }}</span>
+              <span class="ri-pos">{{ line.pos }}</span>
+              <span class="ri-card" v-if="line.flipped">
+                {{ line.name }}
+                <em :class="line.reversed ? 'rev' : 'up'">{{ line.reversed ? '逆位' : '正位' }}</em>
+              </span>
+              <span class="ri-card locked-tag" v-else>未翻开 · 点击牌面揭示</span>
+            </div>
+            <p class="ri-text" v-if="line.flipped">{{ line.text }}</p>
+            <p class="ri-text blur" v-else>这张牌的含义仍被夜色遮蔽，翻开它便会显现……</p>
+          </li>
+        </ol>
+
+        <div class="reading-summary" v-if="allFlipped">
+          <h3>✦ 综合指引</h3>
+          <p v-for="(p, i) in analysis.summary" :key="'sum-' + i">{{ p }}</p>
+          <p class="reading-foot">占卜是一面照见内心的镜子，愿它照亮你即将迈出的那一步。</p>
+        </div>
+        <div class="reading-summary locked-sum" v-else>
+          <h3>✦ 综合指引</h3>
+          <p>翻开全部 {{ drawn.length }} 张牌后，将为你呈现完整的综合解读。</p>
+        </div>
+      </div>
+
+      <!-- AI 深度解读（仅当用户填写了问题） -->
+      <div class="ai-card" v-if="showAiCard">
+        <div class="ai-head">
+          <span class="ai-title"><span class="ai-spark">✦</span> AI 深度解读</span>
+          <span class="ai-model" v-if="aiReady">{{ aiCfg.model || '默认模型' }}</span>
+        </div>
+
+        <div class="ai-body" v-if="!aiReady">
+          <p>还没有配置大模型接口。配置后，只要你在上方填写了问题，
+             抽牌结束后就会自动结合<b>你的问题 + 每张牌 + 正逆位 + 牌阵位置</b>给出更完整的解读。</p>
+          <button class="btn-gold sm" type="button" @click="aiOpen = true">前往配置 API Key</button>
+        </div>
+
+        <div class="ai-body" v-else>
+          <div class="ai-status" v-if="aiState === 'idle'">翻开全部牌后自动开始解读…</div>
+          <div class="ai-status" v-else-if="aiState === 'loading'">
+            <span class="ai-spinner"></span> 正在结合你的问题与牌面进行解读…
+          </div>
+          <div class="ai-status err" v-else-if="aiState === 'error'">
+            <b>调用失败：</b>{{ aiError }}
+            <button class="btn-ghost sm" type="button" @click="runAi(true)">重试</button>
+          </div>
+          <div class="ai-text" v-html="aiHtml" v-if="aiText"></div>
+          <div class="ai-actions" v-if="aiState === 'done'">
+            <button class="btn-ghost sm" type="button" @click="runAi(true)">重新生成</button>
+            <button class="btn-ghost sm" type="button" @click="copyAi">复制解读</button>
+          </div>
+        </div>
+      </div>
+
+      <p class="disclaimer">本应用为自我探索与娱乐工具，牌意与 AI 解读仅供参考，不构成医疗、法律、投资等专业建议。</p>
+    </section>
+
+    <!-- ================= 板块二：图鉴 ================= -->
+    <section class="view view-learn" v-if="tab === 'learn'">
+      <div class="learn-head">
+        <p class="hero-kicker">✦ CODEX ✦</p>
+        <h1 class="learn-title">塔罗图鉴</h1>
+        <p class="learn-desc">七十八张牌的象征、元素与正逆位牌意 —— 22 张大阿尔卡纳，56 张小阿尔卡纳。</p>
+
+        <div class="learn-tools">
+          <input class="oracle-input" type="text" autocomplete="off" v-model="learnQuery"
+                 placeholder="搜索牌名，例如：愚者 / 圣杯 / The Moon" />
+          <div class="filter-row">
+            <button v-for="f in filters" :key="f.key" type="button"
+                    class="filter-btn" :class="{ active: learnFilter === f.key }" @click="learnFilter = f.key">
+              {{ f.label }}<em>{{ f.count }}</em>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="codex-grid">
+        <button class="codex-item" type="button" v-for="c in filteredCards" :key="'cx-' + c.id" @click="openCard(c)">
+          <div class="mini-card" :class="{ 'is-major': c.arcana === 'major' }">
+            <img class="card-art" v-if="!broken[c.id]" :src="'./images/card_' + c.id + '.jpg'"
+                 :alt="c.name" loading="lazy" decoding="async" @error="markBroken(c.id)" />
+            <span class="mini-emoji" v-else>{{ c.emoji }}</span>
+            <span class="mini-num">{{ numeralOf(c) }}</span>
+          </div>
+          <span class="mini-name">{{ c.name }}</span>
+          <span class="mini-en">{{ c.en }}</span>
+        </button>
+      </div>
+      <p class="empty-tip" v-if="!filteredCards.length">没有找到符合条件的牌，换个关键词试试。</p>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>✦ 神秘塔罗 · Mystic Tarot ✦</span>
+    <span class="foot-dim">Vue 3 + GSAP · 素材全部本地化 · 78 张牌意为本地解析引擎，AI 为可选的深度解读</span>
+  </footer>
+
+  <!-- ================= AI 设置弹窗 ================= -->
+  <transition name="pop">
+    <div class="modal-mask" v-if="aiOpen" @click.self="aiOpen = false">
+      <div class="modal modal-ai">
+        <button class="modal-close" type="button" aria-label="关闭" @click="aiOpen = false">✕</button>
+        <h2 class="m-title">AI 深度解读设置</h2>
+        <p class="m-en">仅在你填写了问题时调用 · 密钥只保存在本机浏览器</p>
+
+        <div class="ai-form">
+          <label class="field-label">服务商</label>
+          <div class="preset-row">
+            <button v-for="p in aiPresets" :key="p.key" type="button"
+                    class="preset-btn" :class="{ active: aiForm.preset === p.key }"
+                    @click="applyPreset(p.key)">
+              {{ p.name }}
+            </button>
+          </div>
+
+          <label class="field-label" for="ai-base">接口地址</label>
+          <input id="ai-base" class="oracle-input" type="text" v-model.trim="aiForm.base"
+                 placeholder="https://api.deepseek.com" />
+
+          <label class="field-label" for="ai-model">模型</label>
+          <input id="ai-model" class="oracle-input" type="text" v-model.trim="aiForm.model"
+                 placeholder="deepseek-chat" />
+
+          <label class="field-label" for="ai-key">API Key</label>
+          <input id="ai-key" class="oracle-input" type="password" v-model.trim="aiForm.key"
+                 placeholder="sk-..." autocomplete="off" />
+
+          <p class="ai-note">
+            · 密钥保存在浏览器 localStorage，只会在你抽牌后直接发送给你填写的接口，本站不做任何转发或收集。<br />
+            · 已适配浏览器直连的服务商：DeepSeek、硅基流动、阿里云百炼、月之暗面、火山方舟、OpenAI 兼容接口。<br />
+            · 若接口未开放跨域（CORS），浏览器会拦截请求，需改用支持跨域的接口或自建代理。
+          </p>
+        </div>
+
+        <div class="ai-modal-actions">
+          <button class="btn-gold sm" type="button" @click="saveAi">{{ aiForm.key ? '保存' : '清除配置' }}</button>
+          <button class="btn-ghost sm" type="button" @click="testAi" :disabled="aiTesting">
+            {{ aiTesting ? '测试中…' : '保存并测试连接' }}
+          </button>
+          <span class="ai-test-result" :class="aiTestOk ? 'ok' : 'err'" v-if="aiTestMsg">{{ aiTestMsg }}</span>
+        </div>
+      </div>
+    </div>
+  </transition>
+
+  <!-- ================= 卡牌详情弹窗 ================= -->
+  <transition name="pop">
+    <div class="modal-mask" v-if="selected" @click.self="selected = null">
+      <div class="modal">
+        <button class="modal-close" type="button" aria-label="关闭" @click="selected = null">✕</button>
+        <div class="modal-left">
+          <div class="big-card" :class="{ 'is-major': selected.arcana === 'major' }">
+            <img class="card-art" v-if="!broken[selected.id]" :src="'./images/card_' + selected.id + '.jpg'"
+                 :alt="selected.name" @error="markBroken(selected.id)" />
+            <div class="face-frame" v-else>
+              <span class="face-emoji">{{ selected.emoji }}</span>
+              <span class="face-name">{{ selected.name }}</span>
+              <span class="face-en">{{ selected.en }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-right">
+          <h2 class="m-title">{{ selected.name }}</h2>
+          <p class="m-en">{{ selected.en }}</p>
+          <div class="m-tags">
+            <span class="tag">{{ arcanaLabel(selected) }}</span>
+            <span class="tag">{{ numeralOf(selected) }}</span>
+            <span class="tag" v-if="selected.element">{{ selected.element }}元素</span>
+            <span class="tag" v-if="selected.astrology">☾ {{ selected.astrology }}</span>
+          </div>
+          <div class="m-kw">
+            <span v-for="(k, i) in (selected.keywords || [])" :key="'kw-' + i" class="kw">{{ k }}</span>
+          </div>
+          <div class="meaning-block up">
+            <h3>正位 · Upright</h3>
+            <p>{{ selected.upright }}</p>
+          </div>
+          <div class="meaning-block rev">
+            <h3>逆位 · Reversed</h3>
+            <p>{{ selected.reversed }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </transition>
+
+  <!-- ================= 牌阵图弹窗 ================= -->
+  <transition name="pop">
+    <div class="modal-mask" v-if="spreadRefOpen" @click.self="spreadRefOpen = false">
+      <div class="modal modal-ref">
+        <button class="modal-close" type="button" aria-label="关闭" @click="spreadRefOpen = false">✕</button>
+        <h2 class="m-title">凯尔特十字 · 牌阵位置</h2>
+        <img src="./images/spread-celtic.jpg" alt="凯尔特十字牌阵位置示意" />
+        <p class="ref-note">1 底牌／指示牌 · 2 覆盖牌 · 3 根源 · 4 过去 · 5 可能结果 · 6 近期未来 · 7 自我 · 8 环境 · 9 希望与恐惧 · 10 结果</p>
+      </div>
+    </div>
+  </transition>
+</div>
+
+<!-- 依赖库：优先使用本地文件（零外网请求），失败时回退国内 CDN -->
+<script src="./vendor/vue.global.prod.js"></script>
+<script>window.Vue || document.write('<script src="https://cdn.bootcdn.net/ajax/libs/vue/3.4.21/vue.global.prod.js"><\/script>');</script>
+<script>window.Vue || document.write('<script src="https://cdn.staticfile.org/vue/3.4.21/vue.global.prod.js"><\/script>');</script>
+
+<script src="./vendor/gsap.min.js"></script>
+<script>window.gsap || document.write('<script src="https://cdn.bootcdn.net/ajax/libs/gsap/3.12.5/gsap.min.js"><\/script>');</script>
+<script>window.gsap || document.write('<script src="https://cdn.staticfile.org/gsap/3.12.5/gsap.min.js"><\/script>');</script>
+
+<script src="./js/data.js"></script>
+<script src="./js/ai.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>
