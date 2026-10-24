@@ -364,7 +364,8 @@
       <div class="modal modal-ref">
         <button class="modal-close" type="button" aria-label="关闭" @click="spreadRefOpen = false">✕</button>
         <h2 class="m-title">凯尔特十字 · 牌阵位置</h2>
-        <img src="./images/spread-celtic.jpg" alt="凯尔特十字牌阵位置示意" />
+        <!-- 用 :src 绑定而非静态 src：否则浏览器的预加载扫描器会在首屏就抓这张 250KB 的图 -->
+        <img :src="'./images/spread-celtic.jpg'" alt="凯尔特十字牌阵位置示意" />
         <p class="ref-note">1 底牌／指示牌 · 2 覆盖牌 · 3 根源 · 4 过去 · 5 可能结果 · 6 近期未来 · 7 自我 · 8 环境 · 9 希望与恐惧 · 10 结果</p>
       </div>
     </div>
