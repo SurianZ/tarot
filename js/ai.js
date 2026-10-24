@@ -11,7 +11,8 @@ window.TAROT_AI = (function () {
   var PRESETS = [
     { key: 'deepseek', name: 'DeepSeek', base: 'https://api.deepseek.com', model: 'deepseek-chat' },
     { key: 'siliconflow', name: '硅基流动', base: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-72B-Instruct' },
-    { key: 'dashscope', name: '阿里云百炼', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+    { key: 'dashscope', name: '阿里云百炼（中国站）', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+    { key: 'dashscope-intl', name: '阿里云百炼（国际站）', base: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
     { key: 'moonshot', name: '月之暗面 Kimi', base: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
     { key: 'ark', name: '火山方舟（豆包）', base: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-pro-32k' },
     { key: 'custom', name: '自定义 / OpenAI 兼容', base: '', model: '' }
@@ -73,6 +74,32 @@ window.TAROT_AI = (function () {
     ];
   }
 
+  /* 认证/权限类错误给出可执行的排查提示（端点与 key 的区域必须匹配） */
+  function diagnose(status, url) {
+    if (status !== 401 && status !== 403) return '';
+    var lines = [];
+    lines.push('');
+    lines.push('调用地址：' + url);
+    if (/dashscope-intl/.test(url)) {
+      lines.push('→ 这是阿里云百炼【国际站】端点，只认国际站（modelstudio.console.alibabacloud.com）生成的 API-KEY。');
+      lines.push('   如果你的 key 取自中国站 bailian.console.aliyun.com，请把「服务商」改成「阿里云百炼（中国站）」。');
+    } else if (/dashscope\.aliyuncs\.com/.test(url)) {
+      lines.push('→ 这是阿里云百炼【中国站】端点，只认中国站（bailian.console.aliyun.com → API-KEY 管理）生成的 sk- 密钥。');
+      lines.push('   如果 key 取自国际站，请改选「阿里云百炼（国际站）」；另外别把阿里云 AccessKey（LTAI 开头）当 API-KEY 用。');
+    } else if (/api\.deepseek\.com/.test(url)) {
+      lines.push('→ DeepSeek 密钥形如 sk- 加 32 位字符，请到 platform.deepseek.com → API keys 重新生成并完整复制。');
+    } else if (/moonshot/.test(url)) {
+      lines.push('→ Kimi 密钥请在 platform.moonshot.cn → API Key 管理 获取。');
+    } else if (/siliconflow/.test(url)) {
+      lines.push('→ 硅基流动密钥请在 cloud.siliconflow.cn → API 密钥 获取。');
+    } else if (/volces\.com/.test(url)) {
+      lines.push('→ 火山方舟需要同时填对「模型」为你的推理接入点 ID（形如 ep-xxxx）或模型名。');
+    } else {
+      lines.push('→ 请核对三点：① key 是否完整（不要带多余空格或换行）② 服务商与端点是否匹配 ③ 用的是「API Key」而不是「AccessKey / SecretKey」。');
+    }
+    return lines.join('\n');
+  }
+
   /* 流式对话：onDelta(片段) / onDone(全文) */
   async function chat(cfg, messages, onDelta, signal) {
     var url = endpoint(cfg.base);
@@ -105,7 +132,7 @@ window.TAROT_AI = (function () {
       try { detail = await res.text(); } catch (e2) {}
       var msg = detail;
       try { var j = JSON.parse(detail); msg = (j.error && (j.error.message || j.error.code)) || j.message || detail; } catch (e3) {}
-      throw new Error('接口返回 ' + res.status + '：' + String(msg).slice(0, 300));
+      throw new Error('接口返回 ' + res.status + '：' + String(msg).slice(0, 300) + diagnose(res.status, url));
     }
 
     var ctype = (res.headers.get('content-type') || '').toLowerCase();
