@@ -531,6 +531,15 @@ button:disabled{ cursor:not-allowed; }
 .ai-body p{ margin:0 0 10px; }
 .ai-status{ display:flex; align-items:center; gap:10px; color:var(--ink-2); font-size:14px; padding:6px 0; }
 .ai-status.err{ color:var(--danger); flex-wrap:wrap; }
+/* 错误信息里带多行排查建议，用 pre-line 保留换行 */
+.ai-status.err{ white-space:pre-line; line-height:1.85; font-family:var(--sans); font-size:13.5px; }
+.ai-status.err b{ font-family:var(--serif); }
+.ai-live{
+  margin:6px 0 0; font-size:12px; font-family:var(--sans); color:var(--ink-3);
+  word-break:break-all; line-height:1.7;
+}
+.ai-live code{ color:var(--gold-text); background:rgba(212,175,55,.08); padding:1px 6px; border-radius:4px; }
+.ai-live.warn{ color:#f0c47a; }
 .ai-spinner{
   width:14px; height:14px; border-radius:50%; flex:0 0 auto;
   border:2px solid rgba(167,139,250,.3); border-top-color:var(--violet);
