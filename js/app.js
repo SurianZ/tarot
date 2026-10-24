@@ -243,6 +243,16 @@
       flippedCount: function () { return this.drawn.filter(function (d) { return d.flipped; }).length; },
       allFlipped: function () { return this.drawn.length > 0 && this.drawn.every(function (d) { return d.flipped; }); },
       aiReady: function () { return !!(this.aiCfg.key && this.aiCfg.base); },
+      /* 实时告诉用户"最终会请求哪个地址"，避免端点选错却看不出来 */
+      resolvedEndpoint: function () { return AI ? AI.endpoint(this.aiForm.base) : ''; },
+      keyHint: function () {
+        var k = String(this.aiForm.key || '').replace(/\s+/g, '');
+        if (!k) return '';
+        if (/^LTAI/i.test(k)) return '⚠ 这看起来是阿里云 AccessKey（LTAI 开头），不是大模型 API-KEY，调用会 401。';
+        if (!/^sk-/.test(k)) return '⚠ 常见的大模型密钥都以 sk- 开头，请确认没有复制错内容。';
+        if (k.length < 20) return '⚠ 密钥长度偏短，可能没有复制完整。';
+        return '';
+      },
       aiHtml: function () { return AI ? AI.render(this.aiText, this.aiState === 'loading') : ''; },
       showAiCard: function () { return !!this.question.trim() && !!this.analysis; },
       filters: function () {
@@ -728,6 +738,9 @@
         if (p.model) this.aiForm.model = p.model;
       },
       saveAi: function () {
+        /* key / 地址里如果混入空格或换行（复制粘贴常见），会直接导致 401，这里统一清掉 */
+        this.aiForm.key = String(this.aiForm.key || '').replace(/\s+/g, '');
+        this.aiForm.base = String(this.aiForm.base || '').replace(/\s+/g, '');
         this.aiCfg = {
           preset: this.aiForm.preset, base: this.aiForm.base,
           model: this.aiForm.model, key: this.aiForm.key
