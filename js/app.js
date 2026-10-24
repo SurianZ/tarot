@@ -181,7 +181,9 @@
         analysis: null,
         landed: 0,
         broken: {},
-        hasArt: false,
+        /* 本站自带 78 张牌面，默认按「有图」渲染；单张图缺失时由 @error 回退到 CSS 牌面。
+           不再额外发探测请求 —— 国内每次往返 1~2 秒，能省则省 */
+        hasArt: true,
         selected: null,
         spreadRefOpen: false,
         learnFilter: 'all',
@@ -271,7 +273,6 @@
     },
 
     mounted: function () {
-      this.probeCardArt();
       this.updateUnit();
       window.addEventListener('resize', this.onResize);
       window.addEventListener('pointermove', this.onPointerMove, { passive: true });
@@ -308,15 +309,6 @@
         if (t === 'divine') { var self = this; this.$nextTick(function () { self.updateUnit(); self.onResize(); }); }
       },
       openCard: function (c) { this.selected = c; },
-
-      probeCardArt: function () {
-        var self = this;
-        [0, 22].forEach(function (id) {
-          var img = new Image();
-          img.onload = function () { self.hasArt = true; };
-          img.src = './images/card_' + id + '.jpg';
-        });
-      },
 
       slotStyle: function (c) {
         return {
