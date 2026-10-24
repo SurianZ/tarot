@@ -298,6 +298,8 @@
           <label class="field-label" for="ai-key">API Key</label>
           <input id="ai-key" class="oracle-input" type="password" v-model.trim="aiForm.key"
                  placeholder="sk-..." autocomplete="off" />
+          <p class="ai-live" v-if="resolvedEndpoint">实际请求地址：<code>{{ resolvedEndpoint }}</code></p>
+          <p class="ai-live warn" v-if="keyHint">{{ keyHint }}</p>
 
           <p class="ai-note">
             · 密钥保存在浏览器 localStorage，只会在你抽牌后直接发送给你填写的接口，本站不做任何转发或收集。<br />
